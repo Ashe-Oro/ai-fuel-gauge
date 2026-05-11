@@ -1,0 +1,26 @@
+# Build artifacts
+build/
+*.app
+*.dSYM/
+*.dSYM.zip
+
+# Swift / Xcode (in case anyone regenerates an Xcode project)
+.build/
+.swiftpm/
+*.xcodeproj/
+DerivedData/
+Package.resolved
+
+# macOS
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Local Claude Code config (user-specific)
+.claude/
+
+# Misc
+*.log
