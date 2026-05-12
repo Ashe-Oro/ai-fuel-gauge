@@ -15,33 +15,35 @@ struct ClaudeUsageWidgetApp: App {
     }
 }
 
-/// The text shown next to the menu bar clock. Picks the worst-of-three
-/// quota percentages and colors it by threshold. Falls back to "—" while
-/// the first fetch is in flight and to "!" if the fetch failed.
+/// The text shown next to the menu bar clock. Picks the worst-of-all
+/// quota percentages across both Claude Code and Codex. Falls back to
+/// "—" while the first fetch is in flight; "!" if every fetch failed.
 private struct MenuBarLabel: View {
     @ObservedObject var store: UsageStore
 
     var body: some View {
-        if let worst = worstMetric {
-            HStack(spacing: 3) {
-                Image(systemName: "chart.bar.fill")
-                Text("\(worst.percent)%")
-            }
-        } else if store.quotaError != nil {
-            HStack(spacing: 3) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                Text("!")
-            }
-        } else {
-            HStack(spacing: 3) {
-                Image(systemName: "chart.bar.fill")
-                Text("—")
-            }
+        HStack(spacing: 3) {
+            Image(systemName: iconName)
+            Text(label)
         }
     }
 
-    private var worstMetric: QuotaMetric? {
-        store.displayMetrics.max(by: { $0.percent < $1.percent })
+    private var iconName: String {
+        if store.worstOverall == nil, allFailed {
+            return "exclamationmark.triangle.fill"
+        }
+        return "chart.bar.fill"
+    }
+
+    private var label: String {
+        if let worst = store.worstOverall {
+            return "\(worst.percent)%"
+        }
+        return allFailed ? "!" : "—"
+    }
+
+    private var allFailed: Bool {
+        store.claudeError != nil && store.codexError != nil
     }
 }
 

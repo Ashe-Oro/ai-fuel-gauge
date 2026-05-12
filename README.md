@@ -1,91 +1,114 @@
-# Claude Fuel Gauge
+# AI Fuel Gauge
 
-A tiny native macOS menu bar app that shows your Claude Code session and weekly quotas as a fuel gauge: used vs. remaining, with reset times. No analytics, no model breakdown, no historical charts — just "how close am I to my limit."
+A tiny native macOS menu bar app that shows your **Claude Code** and **OpenAI Codex** session and weekly quotas as a fuel gauge: used vs. remaining, with reset times. No analytics, no model breakdown, no historical charts — just "how close am I to my limit, on either service."
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange) ![License](https://img.shields.io/badge/License-MIT-green)
 
 ## What it shows
 
-- **Session · 5h** — your rolling 5-hour quota, big colored percentage + bar + reset countdown
-- **Weekly · all models** — your 7-day quota, same treatment
-- **Weekly · Sonnet** — appears only if your plan exposes a Sonnet-only limit
-- Menu bar label shows the worst-of-three percentage, e.g. `📊 24%`
+Grouped by service, big colored percentage + bar + reset countdown for each metric:
 
-Color thresholds: green under 60%, amber 60–85%, red over 85%.
+**Claude Code**
+- **Session · 5h** — your rolling 5-hour quota
+- **Weekly · all models** — your 7-day quota
+- **Weekly · Sonnet** — appears only if your plan exposes a Sonnet-only limit
+
+**Codex**
+- **Session · 5h** — your rolling 5-hour quota (Codex `primary` window)
+- **Weekly** — your weekly quota (Codex `secondary` window)
+
+The menu bar label shows the **worst-of-all** percentage across both services, e.g. `📊 41%` — green under 60%, amber 60–85%, red over 85%.
 
 ## Install
-
-### Build from source (the only option right now)
 
 You need only **Xcode Command Line Tools** — no full Xcode required.
 
 ```bash
-git clone https://github.com/Ashe-Oro/claude-fuel-gauge.git
-cd claude-fuel-gauge
+git clone https://github.com/Ashe-Oro/ai-fuel-gauge.git
+cd ai-fuel-gauge
 ./build.sh release
 open "build/Claude Usage.app"
 ```
 
-To keep it permanent, drag `build/Claude Usage.app` into `/Applications`.
+Drag `build/Claude Usage.app` into `/Applications` to keep it permanent.
 
 ## How it works
 
-There's no public API for the per-account Claude Code quota — the only way to read it is by running the `claude` CLI and asking for `/usage`. This app does that:
+The two services expose usage data very differently, so we use a different mechanism for each — but the user-facing UI is uniform.
 
-1. On launch, it spawns the bundled [`fetch-quota.exp`](ClaudeUsageWidget/Resources/fetch-quota.exp) script.
-2. The script runs `claude` under a pty (needed because `claude` falls back to print mode without a TTY), waits for the `/usage` panel to render, sends `/exit`, and captures the output.
-3. A Swift parser extracts the three percentages and reset times and renders them.
+### Claude Code
 
-Subsequent refreshes happen every 20 minutes in the background, or whenever you click the menu bar icon if data is stale.
+There's no public API for the per-account Claude Code quota. The only way to read it is by running the `claude` CLI and asking for `/usage`:
+
+1. On launch, the bundled [`fetch-quota.exp`](ClaudeUsageWidget/Resources/fetch-quota.exp) script spawns `claude` under a pty (needed because `claude` falls back to print mode without a TTY).
+2. The script waits for the `/usage` panel to render, sends `/exit`, and captures the output.
+3. A Swift parser ([`QuotaFetcher.swift`](ClaudeUsageWidget/Sources/Services/QuotaFetcher.swift)) strips ANSI, locates the three section markers, and extracts the percentages and reset times.
+
+### OpenAI Codex
+
+Codex ships an official documented JSON-RPC app server. Much cleaner:
+
+1. Spawn `codex app-server --listen stdio://`.
+2. Send `initialize` (JSON-RPC handshake), then `account/rateLimits/read`.
+3. Decode the response — `primary` (5-hour window) and `secondary` (weekly window) come back with `usedPercent`, `resetsAt` (unix seconds), and `windowDurationMins`.
+4. No TUI scraping, no expect script.
+
+See [`CodexFetcher.swift`](ClaudeUsageWidget/Sources/Services/CodexFetcher.swift).
+
+### Refresh strategy
+
+Both services are fetched on app launch, then every 20 minutes in the background. The dropdown auto-refreshes if data is older than 15 minutes when you open it. There's a manual refresh button in the header.
 
 ## Why not [eylonshm/claude-meter](https://github.com/eylonshm/claude-meter)?
 
 This project started as a re-implementation of that one with a different safety stance:
 
-| Decision | claude-meter | claude-fuel-gauge |
+| Decision | claude-meter | ai-fuel-gauge |
 |---|---|---|
 | `--dangerously-skip-permissions` flag | Yes, every refresh | **Never** |
-| Refresh interval | 10 min (configurable) | 20 min |
+| Refresh interval | 10 min | 20 min |
 | Auto-launch at login | On by default | Off |
 | Persistent debug log on disk | Yes | No |
-| Model breakdown / lifetime stats UI | Yes | No (out of scope) |
-| Lines of Swift | ~2500 | ~700 |
-
-`/usage` is a slash command that doesn't invoke tool use, so `--dangerously-skip-permissions` was never necessary for this use case — claude-meter passed it defensively. We don't.
+| Codex support | No | Yes |
+| Lines of Swift | ~2500 | ~900 |
 
 ## Safety stance
 
-- The app is **not sandboxed** (it needs to spawn `claude` outside the sandbox and read `~/.claude/`).
+- The app is **not sandboxed** (it needs to spawn `claude` and `codex` outside the sandbox).
 - It spawns `claude` once on launch + every 20 min while running, without the dangerous flag. The bundled expect script is ~30 lines and only sends `/usage` then `/exit`.
-- It writes no log files. No telemetry. No network calls of its own.
-- The whole codebase fits in your head — read [QuotaFetcher.swift](ClaudeUsageWidget/Sources/Services/QuotaFetcher.swift) and [fetch-quota.exp](ClaudeUsageWidget/Resources/fetch-quota.exp) to see exactly what it does.
+- It spawns `codex app-server` for ~1 second per refresh, exchanges two JSON messages, then exits.
+- No log files. No telemetry. No network calls of its own (both subprocesses talk to their respective vendors).
+- The whole codebase fits in your head. Read [QuotaFetcher.swift](ClaudeUsageWidget/Sources/Services/QuotaFetcher.swift), [CodexFetcher.swift](ClaudeUsageWidget/Sources/Services/CodexFetcher.swift), and [fetch-quota.exp](ClaudeUsageWidget/Resources/fetch-quota.exp) to see exactly what it does.
 
 If any of this trips your security model, don't run it — the README is the contract.
 
 ## Requirements
 
 - macOS 14 (Sonoma) or later
-- [Claude Code CLI](https://claude.ai/code) installed (`claude` on `$PATH` or in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`)
+- For Claude Code metrics: [Claude Code CLI](https://claude.ai/code) installed (`claude` on `$PATH` or in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`)
+- For Codex metrics: [OpenAI Codex CLI](https://openai.com/codex/) installed (`codex` in similar paths)
 - `/usr/bin/expect` (ships with macOS)
+
+Either CLI being missing is fine — the corresponding section will show an error and the other service will work normally.
 
 ## Project layout
 
 ```
 ClaudeUsageWidget/
 ├── Resources/
-│   ├── ClaudeUsageWidget.entitlements
-│   └── fetch-quota.exp        # The 30-line expect script
+│   └── fetch-quota.exp                # 30-line expect script for Claude TUI
 └── Sources/
     ├── App/
-    │   └── ClaudeUsageWidgetApp.swift     # @main, MenuBarExtra, label
+    │   └── ClaudeUsageWidgetApp.swift  # @main, MenuBarExtra, label
     ├── Models/
-    │   └── UsageModels.swift               # QuotaData, QuotaMetric
+    │   └── UsageModels.swift           # QuotaData, CodexRateLimits, QuotaMetric
     ├── Services/
-    │   ├── QuotaFetcher.swift              # Spawns expect, parses TUI
-    │   └── UsageStore.swift                # @MainActor store + timer
+    │   ├── QuotaFetcher.swift          # Claude: expect + TUI parser
+    │   ├── CodexFetcher.swift          # Codex: app-server JSON-RPC
+    │   └── UsageStore.swift            # @MainActor store + timer
     └── Views/
-        ├── Components.swift                # QuotaRow, CapsuleFill
-        └── MenuBarDropdown.swift           # The dropdown UI
+        ├── Components.swift            # QuotaRow, CapsuleFill
+        └── MenuBarDropdown.swift       # Grouped-by-service UI
 ```
 
 ## License

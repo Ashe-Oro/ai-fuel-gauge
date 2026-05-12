@@ -5,115 +5,172 @@ import Combine
 final class UsageStore: ObservableObject {
     static let shared = UsageStore()
 
-    @Published var quota: QuotaData?
-    @Published var quotaError: String?
-    @Published var quotaLoadedAt: Date?
-    @Published var isFetchingQuota: Bool = false
+    // Claude Code quota (TUI scrape)
+    @Published var claudeQuota: QuotaData?
+    @Published var claudeError: String?
+    @Published var claudeLoadedAt: Date?
+    @Published var isFetchingClaude: Bool = false
 
-    /// How long the cached quota stays "fresh." Reopening the dropdown within
-    /// this window reuses the cached data; older than this triggers a refetch.
+    // Codex quota (JSON-RPC app-server)
+    @Published var codexQuota: CodexRateLimits?
+    @Published var codexError: String?
+    @Published var codexLoadedAt: Date?
+    @Published var isFetchingCodex: Bool = false
+
+    /// Cached results stay "fresh" for this window before triggering refetches
+    /// when the dropdown opens.
     private let staleAfter: TimeInterval = 15 * 60
-
-    /// Background refresh interval. Chosen to keep the menu bar fresh-ish
-    /// without spawning `claude` excessively.
     private let backgroundRefreshInterval: TimeInterval = 20 * 60
 
-    private let fetcher = QuotaFetcher()
+    private let claudeFetcher = QuotaFetcher()
+    private let codexFetcher = CodexFetcher()
     private var refreshTimer: Timer?
 
     private init() {}
 
-    /// Kick off the first fetch and start the background refresh timer.
-    /// Call once from app launch.
-    func start() {
-        Task { await refreshQuota() }
-        startBackgroundTimer()
-    }
+    var isFetchingAny: Bool { isFetchingClaude || isFetchingCodex }
 
-    private func startBackgroundTimer() {
+    /// Kick off the first fetch and start the background refresh timer.
+    func start() {
+        Task { await refreshAll() }
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(
-            withTimeInterval: backgroundRefreshInterval,
-            repeats: true
+            withTimeInterval: backgroundRefreshInterval, repeats: true
         ) { [weak self] _ in
-            Task { @MainActor in
-                await self?.refreshQuota()
-            }
+            Task { @MainActor in await self?.refreshAll() }
         }
     }
 
-    var quotaIsStale: Bool {
-        guard let loaded = quotaLoadedAt else { return true }
-        return Date().timeIntervalSince(loaded) > staleAfter
-    }
+    // MARK: - Refresh
 
-    // MARK: - Fetch
-
-    func refreshQuota() async {
-        guard !isFetchingQuota else { return }
-        isFetchingQuota = true
-        defer { isFetchingQuota = false }
-
-        do {
-            quota = try await fetcher.fetch()
-            quotaError = nil
-            quotaLoadedAt = Date()
-        } catch {
-            quotaError = error.localizedDescription
-        }
+    func refreshAll() async {
+        async let claude: Void = refreshClaude()
+        async let codex:  Void = refreshCodex()
+        _ = await (claude, codex)
     }
 
     func refreshIfNeeded() async {
-        if quota == nil || quotaIsStale {
-            await refreshQuota()
+        let claudeStale = claudeLoadedAt.map { Date().timeIntervalSince($0) > staleAfter } ?? true
+        let codexStale  = codexLoadedAt.map  { Date().timeIntervalSince($0) > staleAfter } ?? true
+        if claudeStale || codexStale {
+            await refreshAll()
         }
     }
 
-    // MARK: - Derived metrics
+    func refreshClaude() async {
+        guard !isFetchingClaude else { return }
+        isFetchingClaude = true
+        defer { isFetchingClaude = false }
 
-    var metrics: [QuotaMetric] {
-        guard let q = quota else { return [] }
-        return [
+        do {
+            claudeQuota = try await claudeFetcher.fetch()
+            claudeError = nil
+            claudeLoadedAt = Date()
+        } catch {
+            claudeError = error.localizedDescription
+        }
+    }
+
+    func refreshCodex() async {
+        guard !isFetchingCodex else { return }
+        isFetchingCodex = true
+        defer { isFetchingCodex = false }
+
+        do {
+            codexQuota = try await codexFetcher.fetch()
+            codexError = nil
+            codexLoadedAt = Date()
+        } catch {
+            codexError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Derived per-service metrics
+
+    var claudeMetrics: [QuotaMetric] {
+        guard let q = claudeQuota else { return [] }
+        let raw: [QuotaMetric] = [
             QuotaMetric(
-                kind: .weeklyAll,
-                label: "Weekly · all models",
-                percent: q.weeklyAllPercent,
-                resetRaw: q.weeklyAllResetTime,
-                resetDate: Self.parseResetDate(q.weeklyAllResetTime)
-            ),
-            QuotaMetric(
-                kind: .weeklySonnet,
-                label: "Weekly · Sonnet",
-                percent: q.weeklySonnetPercent,
-                resetRaw: q.weeklySonnetResetTime,
-                resetDate: Self.parseResetDate(q.weeklySonnetResetTime)
-            ),
-            QuotaMetric(
-                kind: .session,
-                label: "Session · 5h",
+                source: .claudeCode, kind: .session, label: "Session · 5h",
                 percent: q.sessionPercent,
                 resetRaw: q.sessionResetTime,
-                resetDate: Self.parseResetDate(q.sessionResetTime)
+                resetDate: Self.parseClaudeResetDate(q.sessionResetTime)
+            ),
+            QuotaMetric(
+                source: .claudeCode, kind: .weeklyAll, label: "Weekly · all models",
+                percent: q.weeklyAllPercent,
+                resetRaw: q.weeklyAllResetTime,
+                resetDate: Self.parseClaudeResetDate(q.weeklyAllResetTime)
+            ),
+            QuotaMetric(
+                source: .claudeCode, kind: .weeklySonnet, label: "Weekly · Sonnet",
+                percent: q.weeklySonnetPercent,
+                resetRaw: q.weeklySonnetResetTime,
+                resetDate: Self.parseClaudeResetDate(q.weeklySonnetResetTime)
             ),
         ]
+        return raw.filter(\.hasData)
     }
 
-    /// Metrics to show, in display order: session first (most immediate,
-    /// resets within 5h), then weekly limits.
-    var displayMetrics: [QuotaMetric] {
-        let order: [QuotaMetric.Kind] = [.session, .weeklyAll, .weeklySonnet]
-        let byKind = Dictionary(uniqueKeysWithValues: metrics.map { ($0.kind, $0) })
-        return order.compactMap { byKind[$0] }.filter(\.hasData)
+    var codexMetrics: [QuotaMetric] {
+        guard let rl = codexQuota else { return [] }
+        var out: [QuotaMetric] = []
+        if let p = rl.primary {
+            out.append(QuotaMetric(
+                source: .codex, kind: .codexPrimary, label: codexLabel(for: p, fallback: "Session · 5h"),
+                percent: p.usedPercent,
+                resetRaw: formatCodexReset(p),
+                resetDate: p.resetDate
+            ))
+        }
+        if let s = rl.secondary {
+            out.append(QuotaMetric(
+                source: .codex, kind: .codexSecondary, label: codexLabel(for: s, fallback: "Weekly"),
+                percent: s.usedPercent,
+                resetRaw: formatCodexReset(s),
+                resetDate: s.resetDate
+            ))
+        }
+        return out.filter(\.hasData)
     }
 
-    // MARK: - Reset-time parsing
+    var allMetrics: [QuotaMetric] { claudeMetrics + codexMetrics }
+
+    var worstOverall: QuotaMetric? {
+        allMetrics.max(by: { $0.percent < $1.percent })
+    }
+
+    // MARK: - Helpers
+
+    /// Build a friendly Codex label like "Session · 5h" or "Weekly · 7d"
+    /// derived from windowDurationMins, falling back to a literal.
+    private func codexLabel(for w: CodexWindow, fallback: String) -> String {
+        guard let mins = w.windowDurationMins else { return fallback }
+        switch mins {
+        case 0..<60:                   return "Last \(mins)m"
+        case 60..<1440:                return "Session · \(mins / 60)h"
+        case 1440..<10080:             return "Last \(mins / 1440)d"
+        case 10080..<43200:            return "Weekly"
+        default:                       return "Last \(mins / 1440)d"
+        }
+    }
+
+    private func formatCodexReset(_ w: CodexWindow) -> String {
+        guard let date = w.resetDate else { return "—" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    // MARK: - Claude reset-time parsing
     //
     // Claude's /usage panel formats reset times like:
     //   "Mar 22 at 11pm (America/Los_Angeles)"
     //   "2pm"                       (today/tomorrow)
-    // We need a Date so we can show "in 5d 22h".
+    // Codex hands us a unix timestamp directly, no parsing needed.
 
-    static func parseResetDate(_ raw: String) -> Date? {
+    static func parseClaudeResetDate(_ raw: String) -> Date? {
         guard raw != "—", !raw.isEmpty else { return nil }
 
         var tz = TimeZone.current
@@ -133,7 +190,6 @@ final class UsageStore: ObservableObject {
             "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
         ]
 
-        // "Mar 22 at 11pm" or "Mar 22 at 11:30pm"
         if let m = try? NSRegularExpression(
             pattern: #"([A-Za-z]+)\s+(\d+)\s+at\s+(\d+)(?::(\d+))?\s*(am|pm)"#,
             options: .caseInsensitive
@@ -165,7 +221,6 @@ final class UsageStore: ObservableObject {
             }
         }
 
-        // "2pm" or "2:30pm" — interpret as today, else tomorrow
         if let m = try? NSRegularExpression(
             pattern: #"(\d+)(?::(\d+))?\s*(am|pm)"#,
             options: .caseInsensitive
@@ -195,16 +250,13 @@ final class UsageStore: ObservableObject {
 // MARK: - Time-until formatting
 
 enum ResetTimeFormatter {
-    /// "in 5d 22h" / "in 2h 14m" / "in 9m" / "now" — what to show
-    /// the user as the "time until reset" hint next to a quota row.
+    /// "in 5d 22h" / "in 2h 14m" / "in 9m" / "now"
     static func relative(_ date: Date, from now: Date = Date()) -> String {
         let seconds = Int(date.timeIntervalSince(now))
         if seconds <= 0 { return "now" }
-
         let days = seconds / 86_400
         let hours = (seconds % 86_400) / 3600
         let minutes = (seconds % 3600) / 60
-
         if days > 0 { return "in \(days)d \(hours)h" }
         if hours > 0 { return "in \(hours)h \(minutes)m" }
         return "in \(minutes)m"

@@ -31,6 +31,7 @@ swiftc \
   ClaudeUsageWidget/Sources/App/ClaudeUsageWidgetApp.swift \
   ClaudeUsageWidget/Sources/Models/UsageModels.swift \
   ClaudeUsageWidget/Sources/Services/QuotaFetcher.swift \
+  ClaudeUsageWidget/Sources/Services/CodexFetcher.swift \
   ClaudeUsageWidget/Sources/Services/UsageStore.swift \
   ClaudeUsageWidget/Sources/Views/Components.swift \
   ClaudeUsageWidget/Sources/Views/MenuBarDropdown.swift \

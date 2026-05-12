@@ -3,7 +3,6 @@ import SwiftUI
 struct MenuBarDropdown: View {
     @ObservedObject var store = UsageStore.shared
 
-    /// Re-renders the time-until labels every minute without re-fetching.
     @State private var tick = Date()
     private let tickTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
@@ -14,12 +13,8 @@ struct MenuBarDropdown: View {
             footer
         }
         .padding(14)
-        .frame(width: 320)
-        .task {
-            // App launch starts the fetch; this is a safety net in case
-            // the dropdown opens before that completes or data went stale.
-            await store.refreshIfNeeded()
-        }
+        .frame(width: 340)
+        .task { await store.refreshIfNeeded() }
         .onReceive(tickTimer) { tick = $0 }
     }
 
@@ -27,45 +22,62 @@ struct MenuBarDropdown: View {
 
     private var header: some View {
         HStack {
-            Text("Claude Usage")
+            Text("AI Fuel Gauge")
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
             Spacer()
-            if store.isFetchingQuota {
+            if store.isFetchingAny {
                 ProgressView().scaleEffect(0.5).frame(width: 14, height: 14)
             } else {
                 Button {
-                    Task { await store.refreshQuota() }
+                    Task { await store.refreshAll() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Re-fetch /usage")
+                .help("Refresh all")
             }
         }
     }
 
-    // MARK: - Main content
+    // MARK: - Body content
 
     @ViewBuilder
     private var content: some View {
-        if !store.displayMetrics.isEmpty {
-            // Re-evaluate on every tick so relative times stay fresh.
-            let _ = tick
-            VStack(spacing: 16) {
-                ForEach(Array(store.displayMetrics.enumerated()), id: \.element.id) { index, metric in
-                    QuotaRow(metric: metric)
-                    if index < store.displayMetrics.count - 1 {
+        let _ = tick // re-evaluate relative times each minute
+
+        let hasClaude = !store.claudeMetrics.isEmpty
+        let hasCodex  = !store.codexMetrics.isEmpty
+        let hasAny    = hasClaude || hasCodex
+
+        if hasAny {
+            VStack(spacing: 14) {
+                if hasClaude || store.claudeError != nil {
+                    ServiceSection(
+                        source: .claudeCode,
+                        metrics: store.claudeMetrics,
+                        error: store.claudeError
+                    )
+                }
+                if hasCodex || store.codexError != nil {
+                    if hasClaude || store.claudeError != nil {
                         Divider().opacity(0.4)
                     }
+                    ServiceSection(
+                        source: .codex,
+                        metrics: store.codexMetrics,
+                        error: store.codexError
+                    )
                 }
             }
-            .padding(.vertical, 4)
-        } else if store.isFetchingQuota {
+        } else if store.isFetchingAny {
             loadingState
-        } else if let err = store.quotaError {
-            errorState(err)
+        } else if store.claudeError != nil || store.codexError != nil {
+            VStack(spacing: 12) {
+                if let err = store.claudeError { errorRow(source: .claudeCode, message: err) }
+                if let err = store.codexError  { errorRow(source: .codex,      message: err) }
+            }
         } else {
             emptyState
         }
@@ -73,64 +85,54 @@ struct MenuBarDropdown: View {
 
     private var loadingState: some View {
         VStack(spacing: 10) {
-            ProgressView()
-                .scaleEffect(0.7)
+            ProgressView().scaleEffect(0.7)
             Text("Fetching usage…")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
-            Text("Spawning `claude` to query /usage. Takes ~6 s.")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
     }
 
-    private func errorState(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                Text("Couldn't fetch quota")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-            }
-            Text(message)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button {
-                Task { await store.refreshQuota() }
-            } label: {
-                Text("Try again")
-                    .font(.system(size: 11, design: .monospaced))
-            }
-            .controlSize(.small)
-            .disabled(store.isFetchingQuota)
-        }
-    }
-
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("No quota data yet.")
+            Text("No data yet.")
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(.secondary)
             Button {
-                Task { await store.refreshQuota() }
+                Task { await store.refreshAll() }
             } label: {
-                Text("Fetch /usage")
+                Text("Fetch now")
                     .font(.system(size: 11, design: .monospaced))
             }
             .controlSize(.small)
+        }
+    }
+
+    private func errorRow(source: QuotaSource, message: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: source.icon)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                Text(source.displayName.uppercased())
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(1.0)
+                    .foregroundStyle(.secondary)
+            }
+            Text(message)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     // MARK: - Footer
 
     private var footer: some View {
-        HStack {
-            if let loaded = store.quotaLoadedAt {
-                let _ = tick // refresh "N min ago" along with the rest
+        HStack(spacing: 8) {
+            if let loaded = store.claudeLoadedAt ?? store.codexLoadedAt {
+                let _ = tick
                 Text("fetched \(loaded, style: .relative) ago")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.tertiary)
@@ -144,6 +146,42 @@ struct MenuBarDropdown: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - Service section
+
+private struct ServiceSection: View {
+    let source: QuotaSource
+    let metrics: [QuotaMetric]
+    let error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: source.icon)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(source.displayName.uppercased())
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            if let err = error, metrics.isEmpty {
+                Text(err)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: 14) {
+                    ForEach(metrics) { metric in
+                        QuotaRow(metric: metric)
+                    }
+                }
+            }
         }
     }
 }
