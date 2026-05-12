@@ -1,4 +1,4 @@
-# Claude Fuel Gauge
+# AI Fuel Gauge
 
 A tiny native macOS menu bar app that shows your Claude Code session and weekly quotas as a fuel gauge: used vs. remaining, with reset times. No analytics, no model breakdown, no historical charts — just "how close am I to my limit."
 
