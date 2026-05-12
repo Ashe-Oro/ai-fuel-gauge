@@ -42,7 +42,7 @@ Subsequent refreshes happen every 20 minutes in the background, or whenever you 
 
 This project started as a re-implementation of that one with a different safety stance:
 
-| Decision | claude-meter | claude-fuel-gauge |
+| Decision | claude-meter | ai-fuel-gauge |
 |---|---|---|
 | `--dangerously-skip-permissions` flag | Yes, every refresh | **Never** |
 | Refresh interval | 10 min (configurable) | 20 min |
