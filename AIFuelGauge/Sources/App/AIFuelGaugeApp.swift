@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ClaudeUsageWidgetApp: App {
+struct AIFuelGaugeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @ObservedObject private var store = UsageStore.shared
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Build Claude Usage.app using Command Line Tools only (no Xcode required).
+# Build AI Fuel Gauge.app using Command Line Tools only (no Xcode required).
 #
 # Usage: ./build.sh [release|debug]
 set -euo pipefail
 
 CONFIG="${1:-debug}"
-APP_NAME="Claude Usage"
-BUNDLE_ID="com.claudeusage.app"
+APP_NAME="AI Fuel Gauge"
+BUNDLE_ID="com.aifuelgauge.app"
 VERSION="0.1.0"
 TARGET="arm64-apple-macos14.0"
 BUILD_DIR="build"
@@ -28,17 +28,17 @@ swiftc \
   -target "$TARGET" \
   -parse-as-library \
   "${OPTIMIZE[@]}" \
-  ClaudeUsageWidget/Sources/App/ClaudeUsageWidgetApp.swift \
-  ClaudeUsageWidget/Sources/Models/UsageModels.swift \
-  ClaudeUsageWidget/Sources/Services/QuotaFetcher.swift \
-  ClaudeUsageWidget/Sources/Services/CodexFetcher.swift \
-  ClaudeUsageWidget/Sources/Services/UsageStore.swift \
-  ClaudeUsageWidget/Sources/Views/Components.swift \
-  ClaudeUsageWidget/Sources/Views/MenuBarDropdown.swift \
+  AIFuelGauge/Sources/App/AIFuelGaugeApp.swift \
+  AIFuelGauge/Sources/Models/UsageModels.swift \
+  AIFuelGauge/Sources/Services/QuotaFetcher.swift \
+  AIFuelGauge/Sources/Services/CodexFetcher.swift \
+  AIFuelGauge/Sources/Services/UsageStore.swift \
+  AIFuelGauge/Sources/Views/Components.swift \
+  AIFuelGauge/Sources/Views/MenuBarDropdown.swift \
   -o "$APP_DIR/Contents/MacOS/$APP_NAME"
 
 echo "→ Bundling resources"
-cp ClaudeUsageWidget/Resources/fetch-quota.exp "$APP_DIR/Contents/Resources/"
+cp AIFuelGauge/Resources/fetch-quota.exp "$APP_DIR/Contents/Resources/"
 chmod +x "$APP_DIR/Contents/Resources/fetch-quota.exp"
 
 echo "→ Writing Info.plist"

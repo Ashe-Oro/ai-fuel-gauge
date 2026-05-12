@@ -27,10 +27,10 @@ You need only **Xcode Command Line Tools** — no full Xcode required.
 git clone https://github.com/Ashe-Oro/ai-fuel-gauge.git
 cd ai-fuel-gauge
 ./build.sh release
-open "build/Claude Usage.app"
+open "build/AI Fuel Gauge.app"
 ```
 
-Drag `build/Claude Usage.app` into `/Applications` to keep it permanent.
+Drag `build/AI Fuel Gauge.app` into `/Applications` to keep it permanent.
 
 ## How it works
 
@@ -40,9 +40,9 @@ The two services expose usage data very differently, so we use a different mecha
 
 There's no public API for the per-account Claude Code quota. The only way to read it is by running the `claude` CLI and asking for `/usage`:
 
-1. On launch, the bundled [`fetch-quota.exp`](ClaudeUsageWidget/Resources/fetch-quota.exp) script spawns `claude` under a pty (needed because `claude` falls back to print mode without a TTY).
+1. On launch, the bundled [`fetch-quota.exp`](AIFuelGauge/Resources/fetch-quota.exp) script spawns `claude` under a pty (needed because `claude` falls back to print mode without a TTY).
 2. The script waits for the `/usage` panel to render, sends `/exit`, and captures the output.
-3. A Swift parser ([`QuotaFetcher.swift`](ClaudeUsageWidget/Sources/Services/QuotaFetcher.swift)) strips ANSI, locates the three section markers, and extracts the percentages and reset times.
+3. A Swift parser ([`QuotaFetcher.swift`](AIFuelGauge/Sources/Services/QuotaFetcher.swift)) strips ANSI, locates the three section markers, and extracts the percentages and reset times.
 
 ### OpenAI Codex
 
@@ -53,7 +53,7 @@ Codex ships an official documented JSON-RPC app server. Much cleaner:
 3. Decode the response — `primary` (5-hour window) and `secondary` (weekly window) come back with `usedPercent`, `resetsAt` (unix seconds), and `windowDurationMins`.
 4. No TUI scraping, no expect script.
 
-See [`CodexFetcher.swift`](ClaudeUsageWidget/Sources/Services/CodexFetcher.swift).
+See [`CodexFetcher.swift`](AIFuelGauge/Sources/Services/CodexFetcher.swift).
 
 ### Refresh strategy
 
@@ -78,7 +78,7 @@ This project started as a re-implementation of that one with a different safety 
 - It spawns `claude` once on launch + every 20 min while running, without the dangerous flag. The bundled expect script is ~30 lines and only sends `/usage` then `/exit`.
 - It spawns `codex app-server` for ~1 second per refresh, exchanges two JSON messages, then exits.
 - No log files. No telemetry. No network calls of its own (both subprocesses talk to their respective vendors).
-- The whole codebase fits in your head. Read [QuotaFetcher.swift](ClaudeUsageWidget/Sources/Services/QuotaFetcher.swift), [CodexFetcher.swift](ClaudeUsageWidget/Sources/Services/CodexFetcher.swift), and [fetch-quota.exp](ClaudeUsageWidget/Resources/fetch-quota.exp) to see exactly what it does.
+- The whole codebase fits in your head. Read [QuotaFetcher.swift](AIFuelGauge/Sources/Services/QuotaFetcher.swift), [CodexFetcher.swift](AIFuelGauge/Sources/Services/CodexFetcher.swift), and [fetch-quota.exp](AIFuelGauge/Resources/fetch-quota.exp) to see exactly what it does.
 
 If any of this trips your security model, don't run it — the README is the contract.
 
@@ -94,21 +94,21 @@ Either CLI being missing is fine — the corresponding section will show an erro
 ## Project layout
 
 ```
-ClaudeUsageWidget/
+AIFuelGauge/
 ├── Resources/
-│   └── fetch-quota.exp                # 30-line expect script for Claude TUI
+│   └── fetch-quota.exp            # 30-line expect script for Claude TUI
 └── Sources/
     ├── App/
-    │   └── ClaudeUsageWidgetApp.swift  # @main, MenuBarExtra, label
+    │   └── AIFuelGaugeApp.swift   # @main, MenuBarExtra, label
     ├── Models/
-    │   └── UsageModels.swift           # QuotaData, CodexRateLimits, QuotaMetric
+    │   └── UsageModels.swift      # QuotaData, CodexRateLimits, QuotaMetric
     ├── Services/
-    │   ├── QuotaFetcher.swift          # Claude: expect + TUI parser
-    │   ├── CodexFetcher.swift          # Codex: app-server JSON-RPC
-    │   └── UsageStore.swift            # @MainActor store + timer
+    │   ├── QuotaFetcher.swift     # Claude: expect + TUI parser
+    │   ├── CodexFetcher.swift     # Codex: app-server JSON-RPC
+    │   └── UsageStore.swift       # @MainActor store + timer
     └── Views/
-        ├── Components.swift            # QuotaRow, CapsuleFill
-        └── MenuBarDropdown.swift       # Grouped-by-service UI
+        ├── Components.swift       # QuotaRow, CapsuleFill
+        └── MenuBarDropdown.swift  # Grouped-by-service UI
 ```
 
 ## License
