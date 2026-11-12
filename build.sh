@@ -32,6 +32,7 @@ swiftc \
   AIFuelGauge/Sources/Models/UsageModels.swift \
   AIFuelGauge/Sources/Services/QuotaFetcher.swift \
   AIFuelGauge/Sources/Services/CodexFetcher.swift \
+  AIFuelGauge/Sources/Services/GrokFetcher.swift \
   AIFuelGauge/Sources/Services/UsageStore.swift \
   AIFuelGauge/Sources/Views/Components.swift \
   AIFuelGauge/Sources/Views/MenuBarDropdown.swift \

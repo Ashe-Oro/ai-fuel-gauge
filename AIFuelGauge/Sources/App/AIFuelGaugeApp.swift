@@ -43,7 +43,7 @@ private struct MenuBarLabel: View {
     }
 
     private var allFailed: Bool {
-        store.claudeError != nil && store.codexError != nil
+        store.claudeError != nil && store.codexError != nil && store.grokError != nil
     }
 }
 

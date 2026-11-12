@@ -5,11 +5,13 @@ import Foundation
 enum QuotaSource: String, Codable, CaseIterable {
     case claudeCode
     case codex
+    case grok
 
     var displayName: String {
         switch self {
         case .claudeCode: return "Claude Code"
         case .codex:      return "Codex"
+        case .grok:       return "Grok / Grok Bot"
         }
     }
 
@@ -17,6 +19,7 @@ enum QuotaSource: String, Codable, CaseIterable {
         switch self {
         case .claudeCode: return "sparkles"
         case .codex:      return "command"
+        case .grok:       return "bolt"
         }
     }
 }
@@ -54,7 +57,7 @@ struct CodexWindow: Codable, Equatable {
 // MARK: - Unified display metric
 
 struct QuotaMetric: Identifiable, Equatable {
-    enum Kind: String { case session, weeklyAll, weeklySonnet, codexPrimary, codexSecondary }
+    enum Kind: String { case session, weeklyAll, weeklySonnet, codexPrimary, codexSecondary, grokWeekly }
 
     let source: QuotaSource
     let kind: Kind
@@ -62,6 +65,7 @@ struct QuotaMetric: Identifiable, Equatable {
     let percent: Int
     let resetRaw: String
     let resetDate: Date?
+    var precisePercent: Double? = nil
 
     var id: String { "\(source.rawValue):\(kind.rawValue)" }
     var hasData: Bool { resetRaw != "—" && !resetRaw.isEmpty || resetDate != nil }

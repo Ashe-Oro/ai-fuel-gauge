@@ -17,6 +17,10 @@ final class UsageStore: ObservableObject {
     @Published var codexLoadedAt: Date?
     @Published var isFetchingCodex: Bool = false
 
+    @Published var grokQuota: GrokFetcher.Reading?
+    @Published var grokError: String?
+    @Published var isFetchingGrok = false
+
     /// Cached results stay "fresh" for this window before triggering refetches
     /// when the dropdown opens.
     private let staleAfter: TimeInterval = 15 * 60
@@ -24,11 +28,12 @@ final class UsageStore: ObservableObject {
 
     private let claudeFetcher = QuotaFetcher()
     private let codexFetcher = CodexFetcher()
+    private let grokFetcher = GrokFetcher()
     private var refreshTimer: Timer?
 
     private init() {}
 
-    var isFetchingAny: Bool { isFetchingClaude || isFetchingCodex }
+    var isFetchingAny: Bool { isFetchingClaude || isFetchingCodex || isFetchingGrok }
 
     /// Kick off the first fetch and start the background refresh timer.
     func start() {
@@ -46,7 +51,8 @@ final class UsageStore: ObservableObject {
     func refreshAll() async {
         async let claude: Void = refreshClaude()
         async let codex:  Void = refreshCodex()
-        _ = await (claude, codex)
+        async let grok: Void = refreshGrok()
+        _ = await (claude, codex, grok)
     }
 
     func refreshIfNeeded() async {
@@ -54,6 +60,9 @@ final class UsageStore: ObservableObject {
         let codexStale  = codexLoadedAt.map  { Date().timeIntervalSince($0) > staleAfter } ?? true
         if claudeStale || codexStale {
             await refreshAll()
+        } else {
+            // A cheap local read also detects account switches whenever opened.
+            await refreshGrok()
         }
     }
 
@@ -61,7 +70,6 @@ final class UsageStore: ObservableObject {
         guard !isFetchingClaude else { return }
         isFetchingClaude = true
         defer { isFetchingClaude = false }
-
         do {
             claudeQuota = try await claudeFetcher.fetch()
             claudeError = nil
@@ -83,6 +91,43 @@ final class UsageStore: ObservableObject {
         } catch {
             codexError = error.localizedDescription
         }
+    }
+
+    func refreshGrok() async {
+        guard !isFetchingGrok else { return }
+        isFetchingGrok = true
+        defer { isFetchingGrok = false }
+        do {
+            grokQuota = try await grokFetcher.fetch()
+            grokError = nil
+        } catch {
+            // Do not keep a previous account's or expired cycle's usage visible.
+            grokQuota = nil
+            grokError = error.localizedDescription
+        }
+    }
+
+    var grokMetrics: [QuotaMetric] {
+        guard let q = grokQuota, q.expiresAt > Date(),
+              q.resetDate.map({ $0 > Date() }) ?? true else { return [] }
+        let raw = q.resetDate.map { date in
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            return formatter.string(from: date)
+        } ?? "—"
+        return [QuotaMetric(source: .grok, kind: .grokWeekly, label: "Weekly",
+                            percent: Int(min(100, q.percentUsed).rounded()),
+                            resetRaw: raw, resetDate: q.resetDate,
+                            precisePercent: q.percentUsed)]
+    }
+
+    var grokStatus: String? {
+        if let error = grokError { return error }
+        guard let q = grokQuota else { return nil }
+        if grokMetrics.isEmpty { return GrokFetcher.FetchError.expired.localizedDescription }
+        let date = q.loadedAt.formatted(date: .abbreviated, time: .shortened)
+        return "Saved by Grok Bot: \(date). Open Plan & Usage in Grok Bot to update."
     }
 
     // MARK: - Derived per-service metrics
@@ -134,7 +179,7 @@ final class UsageStore: ObservableObject {
         return out.filter(\.hasData)
     }
 
-    var allMetrics: [QuotaMetric] { claudeMetrics + codexMetrics }
+    var allMetrics: [QuotaMetric] { claudeMetrics + codexMetrics + grokMetrics }
 
     var worstOverall: QuotaMetric? {
         allMetrics.max(by: { $0.percent < $1.percent })

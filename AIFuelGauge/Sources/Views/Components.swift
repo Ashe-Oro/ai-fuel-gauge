@@ -1,5 +1,16 @@
 import SwiftUI
 
+// Keep subscription identity consistent across headings, values, and cards.
+extension QuotaSource {
+    var accentColor: Color {
+        switch self {
+        case .grok: return .purple
+        case .claudeCode: return .orange
+        case .codex: return .blue
+        }
+    }
+}
+
 // MARK: - Color thresholds
 
 enum QuotaColor {
@@ -17,7 +28,7 @@ enum QuotaColor {
 struct QuotaRow: View {
     let metric: QuotaMetric
 
-    private var tint: Color { QuotaColor.tint(forPercent: metric.percent) }
+    private var tint: Color { metric.source.accentColor }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -27,7 +38,7 @@ struct QuotaRow: View {
                     .tracking(1.0)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("\(metric.percent)")
+                Text(metric.precisePercent.map { $0.formatted(.number.precision(.fractionLength(0...2))) } ?? "\(metric.percent)")
                     .font(.system(size: 32, weight: .semibold, design: .rounded))
                     .foregroundStyle(tint)
                     .monospacedDigit()
@@ -37,6 +48,13 @@ struct QuotaRow: View {
             }
 
             CapsuleFill(percent: metric.percent, tint: tint, height: 8)
+
+            if metric.percent >= 60 {
+                Label(metric.percent >= 85 ? "Near limit" : "Usage elevated",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(QuotaColor.tint(forPercent: metric.percent))
+            }
 
             HStack(spacing: 4) {
                 Image(systemName: "clock")
