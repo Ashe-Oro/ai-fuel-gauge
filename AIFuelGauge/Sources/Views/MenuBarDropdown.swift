@@ -49,10 +49,14 @@ struct MenuBarDropdown: View {
 
         let hasClaude = !store.claudeMetrics.isEmpty
         let hasCodex  = !store.codexMetrics.isEmpty
-        let hasAny    = hasClaude || hasCodex
+        let hasGrok = !store.grokMetrics.isEmpty
+        let hasAny    = hasClaude || hasCodex || hasGrok
 
         if hasAny {
-            VStack(spacing: 14) {
+            VStack(spacing: 10) {
+                if hasGrok || store.grokStatus != nil {
+                    ServiceSection(source: .grok, metrics: store.grokMetrics, error: store.grokStatus)
+                }
                 if hasClaude || store.claudeError != nil {
                     ServiceSection(
                         source: .claudeCode,
@@ -61,20 +65,19 @@ struct MenuBarDropdown: View {
                     )
                 }
                 if hasCodex || store.codexError != nil {
-                    if hasClaude || store.claudeError != nil {
-                        Divider().opacity(0.4)
-                    }
                     ServiceSection(
                         source: .codex,
                         metrics: store.codexMetrics,
                         error: store.codexError
                     )
                 }
+
             }
         } else if store.isFetchingAny {
             loadingState
-        } else if store.claudeError != nil || store.codexError != nil {
+        } else if store.claudeError != nil || store.codexError != nil || store.grokStatus != nil {
             VStack(spacing: 12) {
+                if let err = store.grokStatus { errorRow(source: .grok, message: err) }
                 if let err = store.claudeError { errorRow(source: .claudeCode, message: err) }
                 if let err = store.codexError  { errorRow(source: .codex,      message: err) }
             }
@@ -110,21 +113,7 @@ struct MenuBarDropdown: View {
     }
 
     private func errorRow(source: QuotaSource, message: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: source.icon)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                Text(source.displayName.uppercased())
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(1.0)
-                    .foregroundStyle(.secondary)
-            }
-            Text(message)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.red)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        ServiceSection(source: source, metrics: [], error: message)
     }
 
     // MARK: - Footer
@@ -162,11 +151,11 @@ private struct ServiceSection: View {
             HStack(spacing: 6) {
                 Image(systemName: source.icon)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(source.accentColor)
                 Text(source.displayName.uppercased())
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .tracking(1.2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(source.accentColor)
                 Spacer()
             }
 
@@ -181,7 +170,20 @@ private struct ServiceSection: View {
                         QuotaRow(metric: metric)
                     }
                 }
+                if let status = error {
+                    Text(status)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(source.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(source.accentColor.opacity(0.18), lineWidth: 1)
         }
     }
 }

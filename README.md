@@ -6,7 +6,7 @@ A tiny native macOS menu bar app that shows your **Claude Code** and **OpenAI Co
 
 ## What it shows
 
-Grouped by service, big colored percentage + bar + reset countdown for each metric:
+Grouped by service, big colored percentage + bar + reset countdown for each metric. Subscription colors stay consistent across headings, percentages, bars, and faint background cards: purple for Grok, orange for Claude, and blue for Codex. Separate warnings appear at 60% and 85% usage.
 
 **Claude Code**
 - **Session · 5h** — your rolling 5-hour quota
@@ -114,3 +114,9 @@ AIFuelGauge/
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Grok / Grok Bot
+
+The dropdown also shows weekly usage saved by the active account in the Grok Bot desktop app. Open **Plan & Usage** in Grok Bot to update its saved reading, then refresh the gauge. The gauge reads only the local account selector and weekly usage cache; it does not read credentials or make Grok network requests. Expired readings, readings older than 24 hours, and previous quota cycles show an explanatory status instead of zero usage.
+
+Run `python3 Tests/run-grok-tests.py` to check the cache adapter against synthetic fixtures.
